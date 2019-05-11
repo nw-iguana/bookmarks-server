@@ -9,14 +9,12 @@ const bodyParser = express.json()
 
 bookmarksRouter
     .route('/bookmarks')
-    .get(bodyParser, (req, res, next) => {
+    .get(bodyParser, (req, res) => {
         const knexInstance = req.app.get('db')
         BookmarkService.getAllBookmarks(knexInstance)
             .then(bookmarks => {
-                res.status(200)
                 res.json(bookmarks);
             })
-            .catch(next)
     })
     .post(bodyParser, (req, res) => {
         const { name, url } = req.body
@@ -52,20 +50,20 @@ bookmarksRouter
 
 bookmarksRouter
     .route('/bookmarks/:id')
-    .get(bodyParser, (req, res) => {
-        let id = req.params.id;
-        let bookmarkId = bookmarks.filter(bookmark => bookmark.id === id)
-      
-        if (bookmarkId.length === 0) {
-          logger.error(`No bookmarks with ID ${id}`)
-          return res
-            .status(404)
-            .json({ "error": "Not Found" })
-        }
-        
-        return res
-          .status(200)
-          .json(bookmarkId)
+    .get(bodyParser, (req, res, next) => {
+        let id = req.params.id;        
+        const knexInstance = req.app.get('db')
+
+        BookmarkService.getById(knexInstance, id)
+            .then(result => {
+                if (!result) {
+                    res.status(404).json({
+                        error: { message: 'No bookmark at that ID' }
+                    })
+                }
+                res.status(200).json(result)
+            })
+            .catch(next)
     })
     .delete(bodyParser, (req, res) => {
         let id = req.params.id;
