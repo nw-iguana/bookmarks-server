@@ -3,6 +3,7 @@ const uuid = require('uuid/v4');
 const logger = require('../logger');
 const bookmarks = require('../store');
 const BookmarkService = require('./bookmarks-service');
+const xss = require('xss');
 
 const bookmarksRouter = express.Router();
 const bodyParser = express.json();
@@ -19,29 +20,34 @@ bookmarksRouter
   })
   .post(bodyParser, (req, res, next) => {
     const knexInstance = req.app.get('db');
-    const { name, url, rating } = req.body;
+    const { name, url, rating, description } = req.body;
 
-    let id = uuid();
     let newBookmark = {
-      id,
       name,
       url,
-      rating
+      rating,
+      description
     };
 
-    const requiredKeys = [name, url, rating];
+    const requiredKeys = ['name', 'url', 'rating'];
 
-    requiredKeys.forEach((key, value) => {
-      if (key[value] === null) {
-        return res.status(400).json({ error: `${key} cannot be blank` });
+    requiredKeys.forEach(key => {
+      if (!newBookmark[key]) {
+        return res.status(400).json({error: `${key} cannot be blank`})
       }
-    });
+    })
 
     BookmarkService.addBookmark(knexInstance, newBookmark).then(bookmark => {
       return res
         .status(201)
         .location(`http://localhost:8000/bookmarks/${bookmark.id}`)
-        .json(bookmarks);
+        .json({
+          id: bookmark.id,
+          url: xss(bookmark.url),
+          rating: xss(bookmark.rating),
+          name: xss(bookmark.name),
+          description: xss(bookmark.description)
+        });
     });
   });
 
@@ -62,7 +68,8 @@ bookmarksRouter
       })
       .catch(next);
   })
-  .delete(bodyParser, (req, res) => {
+  .delete(bodyParser, (req, res, next) => {
+    const knexInstance = req.app.get('db');
     let id = req.params.id;
     let bookmarkIndex = bookmarks.findIndex(bookmark => bookmark.id === id);
 
@@ -71,9 +78,11 @@ bookmarksRouter
       return res.status(404).json({ error: 'Bookmark not found' });
     }
 
-    bookmarks.splice(bookmarkIndex, 1);
-
-    return res.status(200).end();
+    BookmarkService.deleteBookmark(knexInstance, id)
+      .then(response => {
+        res.status(204).end();
+      })
+      .catch(next)
   });
 
 module.exports = bookmarksRouter;

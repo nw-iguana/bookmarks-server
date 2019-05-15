@@ -94,25 +94,90 @@ describe('Bookmarks Service', () => {
     });
   });
 
-  describe.only('POST /bookmarks', () => {
-    it('creates a bookmark and returns the created bookmark', () => {
-      const newBookmark = {
-        name: 'New test bookmark',
-        url: 'https://www.newbookmark.com',
-        rating: '4'
-      };
+  describe('POST /bookmarks', () => {
+    context(`bookmark entry is valid`, () => {
+      it('creates a bookmark and returns the created bookmark', () => {
+        const newBookmark = {
+          id: 1,
+          name: 'New test bookmark',
+          url: 'https://www.newbookmark.com',
+          rating: '4',
+          description: ''
+        };
 
-      return supertest(app)
-        .post('/bookmarks')
-        .send(newBookmark)
-        .expect(201)
-        .then(res => {
-          expect(res.body).to.eql(newBookmark);
-          expect(res.body.name).to.eql(newBookmark.name);
-          expect(res.body.url).to.eql(newBookmark.url);
-          expect(res.body.rating).to.eql(newBookmark.rating);
-          expect(res.body).to.have.property('id');
+        return supertest(app)
+          .post('/bookmarks')
+          .set('Authorization', `Bearer ${process.env.API_TOKEN}`)
+          .send(newBookmark)
+          .expect(201)
+          .then(res => {
+            expect(res.body).to.eql(newBookmark);
+            expect(res.body.name).to.eql(newBookmark.name);
+            expect(res.body.url).to.eql(newBookmark.url);
+            expect(res.body.rating).to.eql(newBookmark.rating);
+            expect(res.body).to.have.property('id');
+          });
+        })
+
+        it('bookmark entries are invalid', () => {
+          return supertest(app)
+            .post('/bookmarks')
+            .set('Authorization', `Bearer ${process.env.API_TOKEN}`)
+            .send({name: null})
+            .expect(400)
+            .then(res => {
+              expect(res.body).to.eql({error: `name cannot be blank`})
+            })
         });
     });
-  });
+    context(`given an xss attack bookmark`, () => {
+      const maliciousBookmark = {
+        id: 911,
+        name: 'Naughty naughty very naughty <script>alert("xss");</script>',
+        url: 'hack url',
+        rating: '4',
+        description: 'Bad image <img src="https://url.to.file.which/does-not.exist" onerror="alert(document.cookie);">. But not <strong>all</strong> bad.'
+      }
+
+      beforeEach('insert malicious article', () => {
+        return db
+          .into('bookmarks')
+          .insert([maliciousBookmark])
+      })
+
+      it('removes XSS attack content', () => {
+        return supertest(app)
+          .post(`/bookmarks`)
+          .set('Authorization', `Bearer ${process.env.API_TOKEN}`)
+          .send(maliciousBookmark)
+          .expect(201)
+          .expect(res => {
+            expect(res.body.name).to.eql('Naughty naughty very naughty &lt;script&gt;alert(\"xss\");&lt;/script&gt;')
+            expect(res.body.description).to.eql(`Bad image <img src="https://url.to.file.which/does-not.exist">. But not <strong>all</strong> bad.`)
+          })
+      })
+    })
+  })
+
+  describe.only(`DELETE /bookmarks/:id`, () => {
+    
+    beforeEach(() => {
+      return db.into('bookmarks').insert(testBookmarks);
+    });
+
+    it(`responds with 204 and removes bookmark`, () => {
+      const removeId = 3;
+      const expected = testBookmarks.filter(bookmark => bookmark.id !== removeId);
+      return supertest(app)
+        .delete(`/bookmarks/${removeId}`)
+        .set('Authorization', `Bearer ${process.env.API_TOKEN}`)
+        .expect(204)
+        .then(() => {
+          return supertest(app)
+            .get('/bookmarks')
+            .set('Authorization', `Bearer ${process.env.API_TOKEN}`)
+            .expect(expected)
+        })
+    })
+  })
 });
